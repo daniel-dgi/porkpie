@@ -234,7 +234,7 @@ EOD;
      *
      * @return string   Uri of members container
      */
-    public function getMembersContainer($uri, $transaction = "")
+    protected function getMembersContainer($uri, $transaction = "")
     {
         $graph = $this->fedora->getGraph(
             $uri,
@@ -252,7 +252,7 @@ EOD;
         return null;
     }
 
-    public function getFilesContainer($uri, $transaction = "")
+    protected function getFilesContainer($uri, $transaction = "")
     {
         $graph = $this->fedora->getGraph(
             $uri,
@@ -268,5 +268,235 @@ EOD;
             }
         }
         return null;
+    }
+
+    public function addMember($parent_uri, $child_uri, $transaction = "") {
+        $container_uri = $this->getMembersContainer($parent_uri, $transaction);
+
+        if (empty($container_uri)) {
+            return null;
+        }
+
+        $rdf = <<<EOD
+            @prefix ore: <http://www.openarchives.org/ore/terms/>
+
+            <> ore:proxyFor <$child_uri> ;
+               ore:proxyIn  <$parent_uri> .
+EOD;
+
+        return $this->fedora->createResource(
+            $container_uri,
+            $rdf,
+            ['Content-Type' => 'text/turtle'],
+            $transaction,
+            sha1($rdf)
+        );
+    }
+
+    public function addFile($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        $needsTransaction = empty($transaction);
+        if ($needsTransaction) {
+            $transaction = $this->fedora->createTransaction();
+        }
+
+        try {
+            $container_uri = $this->getFilesContainer($parent_uri, $transaction);
+
+            if (empty($container_uri)) {
+                return null;
+            }
+
+            $file_uri = $this->fedora->createResource(
+                $container_uri,
+                $binary,
+                ['Content-Type' => $mimetype],
+                $transaction
+            );
+
+            if (empty($sparql)) {
+                $sparql = <<<EOD
+                    PREFIX pcdm: <http://pcdm.org/models#>
+
+                    INSERT DATA {
+                          <> a pcdm:File .
+                    };
+EOD;
+            }
+
+            $this->fedora->modifyResource(
+                "$file_uri/fcr:metadata",
+                $sparql,
+                [],
+                $transaction
+            );
+
+            // Commit if needed, and return a uri for the representation
+            // outside of the transaction.
+            if ($needsTransaction) {
+                $this->fedora->commitTransaction($transaction);
+                return $this->stripTransactionFromUri($file_uri);
+            }
+
+            return $file_uri;
+        } catch (\Exception $exception) {
+            if (!empty($transaction)) {
+                $this->fedora->rollbackTransaction($transaction);
+            }
+            return null;
+        }
+    }
+
+    public function addPreservationMaster($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:PreservationMasterFile .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addThumbnail($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:ThumbnailImage .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addServiceFile($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:ServiceFile .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addExtractedText($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:ExtractedText .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addTranscript($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:Transcript .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addOriginalFile($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:OriginalFile .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
+    }
+
+    public function addIntermediateFile($parent_uri, $binary, $mimetype, $sparql = "", $transaction = "") {
+        if (empty($sparql)) {
+            $sparql = <<<EOD
+                PREFIX pcdm: <http://pcdm.org/models#>
+                PREFIX pcdmuse: <http://pcdm.org/use#>
+
+                INSERT DATA {
+                      <> a pcdm:File .
+                      <> a pcdmuse:IntermediateFile .
+                };
+EOD;
+        }
+
+        return $this->addFile(
+            $parent_uri,
+            $binary,
+            $mimetype,
+            $sparql,
+            $transaction
+        );
     }
 }
